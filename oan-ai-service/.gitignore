@@ -8,5 +8,5 @@ __pycache__/
 .DS_Store
 documents/
 *.pdf
-*.txt
+documents/*.txt
 EOF
