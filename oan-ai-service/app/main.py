@@ -3,7 +3,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.routers import chat, enquiry
 from app.core.config import get_settings
 
-
 def create_app() -> FastAPI:
     settings = get_settings()
 
@@ -14,7 +13,7 @@ def create_app() -> FastAPI:
 
     application.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:3000"],
+        allow_origins=["http://localhost:3000", "https://oan-ai.vercel.app"],
         allow_methods=["POST", "GET", "OPTIONS"],
         allow_headers=["Content-Type"],
     )
@@ -24,9 +23,7 @@ def create_app() -> FastAPI:
 
     return application
 
-
 app = create_app()
-
 
 @app.get("/health")
 async def health():
