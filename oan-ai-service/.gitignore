@@ -1,0 +1,12 @@
+cd ~/LocalRepository/oan_ai/oan-ai-service
+cat > .gitignore << 'EOF'
+.env
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+documents/
+*.pdf
+*.txt
+EOF
