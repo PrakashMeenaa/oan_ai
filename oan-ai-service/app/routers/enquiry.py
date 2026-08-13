@@ -1,10 +1,15 @@
-from fastapi import APIRouter
-from pydantic import BaseModel, Field
+import asyncio
+import html
+import logging
+from fastapi import APIRouter, Request
+from pydantic import BaseModel, EmailStr, Field
 import resend
 from app.core.supabase import get_supabase
-from app.core.config import get_settings
+from app.core.config import get_settings, Settings
+from app.core.limiter import limiter
 
 router = APIRouter(prefix="/api", tags=["enquiry"])
+logger = logging.getLogger("oan_ai_service.enquiry")
 
 
 class ChatHistoryMessage(BaseModel):
@@ -13,9 +18,9 @@ class ChatHistoryMessage(BaseModel):
 
 
 class EnquiryRequest(BaseModel):
-    name: str = Field(default="")
-    email: str = Field(min_length=5)
-    message: str = Field(min_length=1)
+    name: str = Field(default="", max_length=200)
+    email: EmailStr
+    message: str = Field(min_length=1, max_length=4000)
     chat_history: list[ChatHistoryMessage] = Field(default_factory=list)
 
 
@@ -25,11 +30,16 @@ class EnquiryResponse(BaseModel):
 
 
 def build_email_html(body: EnquiryRequest) -> str:
+    safe_name = html.escape(body.name or "Not provided")
+    safe_email = html.escape(str(body.email))
+    safe_message = html.escape(body.message)
+
     transcript_rows = ""
     for msg in body.chat_history:
         role_label = "Buyer" if msg.role == "user" else "Aria (AI)"
         bg = "#f0f4ff" if msg.role == "user" else "#f9fafb"
         align = "right" if msg.role == "user" else "left"
+        safe_content = html.escape(msg.content).replace(chr(10), "<br/>")
         transcript_rows += f"""
         <tr>
           <td style="padding:8px 12px;background:{bg};border-radius:8px;
@@ -39,7 +49,7 @@ def build_email_html(body: EnquiryRequest) -> str:
               {role_label}
             </span><br/>
             <span style="font-size:14px;color:#111827;line-height:1.5">
-              {msg.content.replace(chr(10), "<br/>")}
+              {safe_content}
             </span>
           </td>
         </tr>
@@ -80,7 +90,7 @@ def build_email_html(body: EnquiryRequest) -> str:
                 <span style="font-size:12px;color:#6b7280;font-weight:600;
                              text-transform:uppercase">Name</span><br/>
                 <span style="font-size:15px;color:#111827">
-                  {body.name or "Not provided"}
+                  {safe_name}
                 </span>
               </td>
             </tr>
@@ -88,9 +98,9 @@ def build_email_html(body: EnquiryRequest) -> str:
               <td style="padding:10px 0;border-bottom:1px solid #e5e7eb">
                 <span style="font-size:12px;color:#6b7280;font-weight:600;
                              text-transform:uppercase">Email</span><br/>
-                <a href="mailto:{body.email}"
+                <a href="mailto:{safe_email}"
                    style="font-size:15px;color:#1d4ed8">
-                  {body.email}
+                  {safe_email}
                 </a>
               </td>
             </tr>
@@ -99,7 +109,7 @@ def build_email_html(body: EnquiryRequest) -> str:
                 <span style="font-size:12px;color:#6b7280;font-weight:600;
                              text-transform:uppercase">Requirement</span><br/>
                 <span style="font-size:15px;color:#111827;line-height:1.6">
-                  {body.message}
+                  {safe_message}
                 </span>
               </td>
             </tr>
@@ -111,8 +121,8 @@ def build_email_html(body: EnquiryRequest) -> str:
                       border-radius:8px;border-left:4px solid #16a34a">
             <p style="margin:0;font-size:13px;color:#15803d">
               <strong>Action required:</strong> Reply directly to
-              <a href="mailto:{body.email}" style="color:#15803d">
-                {body.email}
+              <a href="mailto:{safe_email}" style="color:#15803d">
+                {safe_email}
               </a>
               to follow up with this buyer.
             </p>
@@ -132,14 +142,12 @@ def build_email_html(body: EnquiryRequest) -> str:
     """
 
 
-@router.post("/enquiry", response_model=EnquiryResponse)
-async def submit_enquiry(body: EnquiryRequest) -> EnquiryResponse:
-    settings = get_settings()
+def save_and_notify(body: EnquiryRequest, settings: Settings) -> None:
     supabase = get_supabase()
 
     supabase.table("oan_enquiries").insert({
         "name": body.name,
-        "email": body.email,
+        "email": str(body.email),
         "message": body.message,
     }).execute()
 
@@ -148,9 +156,22 @@ async def submit_enquiry(body: EnquiryRequest) -> EnquiryResponse:
     resend.Emails.send({
         "from": "Aria — OAN AI <onboarding@resend.dev>",
         "to": [settings.oan_sales_email],
-        "reply_to": body.email,
+        "reply_to": str(body.email),
         "subject": f"New Enquiry from {body.name or body.email} — OAN AI",
         "html": build_email_html(body),
     })
 
+
+@router.post("/enquiry", response_model=EnquiryResponse)
+@limiter.limit("5/minute")
+async def submit_enquiry(body: EnquiryRequest, request: Request) -> EnquiryResponse:
+    settings = get_settings()
+
+    try:
+        await asyncio.to_thread(save_and_notify, body, settings)
+    except Exception:
+        logger.exception("enquiry submission failed")
+        return EnquiryResponse(success=False, message="Something went wrong saving your enquiry. Please try again.")
+
+    logger.info(f"enquiry saved, email_domain={str(body.email).split('@')[-1]}")
     return EnquiryResponse(success=True, message="Enquiry received")

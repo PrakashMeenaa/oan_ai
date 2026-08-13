@@ -1,7 +1,38 @@
+import asyncio
+import logging
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from openai import AsyncOpenAI
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 from app.routers import chat, enquiry
 from app.core.config import get_settings
+from app.core.supabase import get_supabase
+from app.core.limiter import limiter
+from app.services.embeddings import get_embedding_model
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+logger = logging.getLogger("oan_ai_service")
+
+
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    await asyncio.to_thread(get_embedding_model)
+    settings = get_settings()
+    application.state.groq_client = AsyncOpenAI(
+        api_key=settings.groq_api_key,
+        base_url="https://api.groq.com/openai/v1",
+    )
+    logger.info("oan-ai-service startup complete")
+    yield
+    await application.state.groq_client.close()
+
 
 def create_app() -> FastAPI:
     settings = get_settings()
@@ -9,11 +40,16 @@ def create_app() -> FastAPI:
     application = FastAPI(
         title="OAN Global-Sync AI Service",
         version="1.0.0",
+        lifespan=lifespan,
     )
+
+    application.state.limiter = limiter
+    application.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    application.add_middleware(SlowAPIMiddleware)
 
     application.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:3000", "https://oan-ai.vercel.app"],
+        allow_origins=settings.cors_origins_list,
         allow_methods=["POST", "GET", "OPTIONS"],
         allow_headers=["Content-Type"],
     )
@@ -23,8 +59,32 @@ def create_app() -> FastAPI:
 
     return application
 
+
 app = create_app()
 
+
 @app.get("/health")
-async def health():
-    return {"status": "ok", "service": "oan-ai-service"}
+async def health() -> JSONResponse:
+    checks = {"embedding_model": False, "supabase": False}
+
+    try:
+        await asyncio.to_thread(get_embedding_model)
+        checks["embedding_model"] = True
+    except Exception as e:
+        logger.error(f"health check embedding_model failed: {e}")
+
+    try:
+        supabase = get_supabase()
+        await asyncio.to_thread(
+            lambda: supabase.table("oan_enquiries").select("id").limit(1).execute()
+        )
+        checks["supabase"] = True
+    except Exception as e:
+        logger.error(f"health check supabase failed: {e}")
+
+    healthy = all(checks.values())
+
+    return JSONResponse(
+        status_code=200 if healthy else 503,
+        content={"status": "ok" if healthy else "degraded", "service": "oan-ai-service", "checks": checks},
+    )

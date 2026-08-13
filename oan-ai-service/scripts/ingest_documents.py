@@ -72,6 +72,11 @@ def store_chunks(chunks: list) -> None:
     total = len(chunks)
     counts: dict[str, int] = {}
 
+    filenames = {chunk.metadata.get("filename", "unknown") for chunk in chunks}
+    print(f"Removing existing chunks for {len(filenames)} file(s) before re-inserting...")
+    for filename in filenames:
+        supabase.table("oan_document_chunks").delete().eq("source_file", filename).execute()
+
     for index, chunk in enumerate(chunks):
         filename = chunk.metadata.get("filename", "unknown")
         doc_type = chunk.metadata.get("document_type", "corporate")

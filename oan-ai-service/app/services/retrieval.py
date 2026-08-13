@@ -1,4 +1,5 @@
 import re
+from concurrent.futures import ThreadPoolExecutor
 from app.core.supabase import get_supabase
 from app.services.embeddings import create_embedding
 
@@ -87,10 +88,9 @@ def retrieve_relevant_chunks(query: str, match_count: int = 8) -> list[dict]:
     search_terms = product_codes + application_terms
 
     if search_terms:
-        text_results = []
-        for term in search_terms:
-            found = text_search_chunks(term, result_count=6)
-            text_results.extend(found)
+        with ThreadPoolExecutor(max_workers=len(search_terms)) as executor:
+            batches = executor.map(lambda term: text_search_chunks(term, result_count=6), search_terms)
+        text_results = [chunk for batch in batches for chunk in batch]
 
         if text_results:
             seen_ids: set[str] = set()
