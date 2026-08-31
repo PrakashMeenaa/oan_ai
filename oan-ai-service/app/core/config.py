@@ -4,7 +4,7 @@ from functools import lru_cache
 
 class Settings(BaseSettings):
     groq_api_key: str
-    oan_model: str = "llama-3.3-70b-versatile"
+    oan_model: str = "openai/gpt-oss-120b"
     oan_max_tokens: int = 1024
     supabase_url: str
     supabase_service_role_key: str
