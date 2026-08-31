@@ -74,7 +74,7 @@ async def stream_oan_response(client: AsyncOpenAI, message: str, history: list[H
 
 
 @router.post("/chat")
-@limiter.limit("10/minute")
+@limiter.limit("30/minute")
 async def chat(body: ChatRequest, request: Request) -> StreamingResponse:
     return StreamingResponse(
         stream_oan_response(request.app.state.groq_client, body.message, body.history),

@@ -17,6 +17,10 @@ export async function streamChatResponse(
     body: JSON.stringify({ message, history }),
   })
 
+  if (response.status === 429) {
+    throw new Error("RATE_LIMITED")
+  }
+
   if (!response.ok) {
     throw new Error(`API error: ${response.status}`)
   }

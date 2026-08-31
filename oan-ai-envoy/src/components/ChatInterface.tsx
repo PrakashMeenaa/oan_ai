@@ -114,13 +114,16 @@ export default function ChatInterface() {
           setIsLoading(false);
         },
       );
-    } catch {
+    } catch (error) {
+      const isRateLimited = error instanceof Error && error.message === "RATE_LIMITED";
       setMessages((prev) =>
         prev.map((msg) =>
           msg.id === assistantId
             ? {
                 ...msg,
-                content: "I'm having trouble connecting right now. Please try again in a moment.",
+                content: isRateLimited
+                  ? "You're sending messages a little fast — please wait a few seconds and try again."
+                  : "I'm having trouble connecting right now. Please try again in a moment.",
                 isStreaming: false,
               }
             : msg,
