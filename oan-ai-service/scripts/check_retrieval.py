@@ -7,7 +7,7 @@ from app.services.embeddings import create_embedding
 from app.core.supabase import get_supabase
 
 
-def test_retrieval(query: str) -> None:
+def check_retrieval(query: str) -> None:
     print(f"\nQuery: {query}")
     print("Creating embedding...")
     embedding = create_embedding(query)
@@ -47,4 +47,4 @@ def test_retrieval(query: str) -> None:
 
 
 if __name__ == "__main__":
-    test_retrieval("defoamer products phosphoric acid")
+    check_retrieval("defoamer products phosphoric acid")

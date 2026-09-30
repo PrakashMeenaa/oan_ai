@@ -25,13 +25,21 @@ logger = logging.getLogger("oan_ai_service")
 async def lifespan(application: FastAPI):
     await asyncio.to_thread(get_embedding_model)
     settings = get_settings()
-    application.state.groq_client = AsyncOpenAI(
+    application.state.llm_client = AsyncOpenAI(
         api_key=settings.groq_api_key,
-        base_url="https://api.groq.com/openai/v1",
+        base_url=settings.llm_base_url,
     )
+    application.state.fallback_llm_client = None
+    if settings.fallback_llm_base_url and settings.fallback_llm_api_key:
+        application.state.fallback_llm_client = AsyncOpenAI(
+            api_key=settings.fallback_llm_api_key,
+            base_url=settings.fallback_llm_base_url,
+        )
     logger.info("oan-ai-service startup complete")
     yield
-    await application.state.groq_client.close()
+    await application.state.llm_client.close()
+    if application.state.fallback_llm_client is not None:
+        await application.state.fallback_llm_client.close()
 
 
 def create_app() -> FastAPI:

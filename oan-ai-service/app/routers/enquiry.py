@@ -151,6 +151,10 @@ def save_and_notify(body: EnquiryRequest, settings: Settings) -> None:
         "message": body.message,
     }).execute()
 
+    if not settings.oan_sales_email:
+        logger.warning("OAN_SALES_EMAIL not set, enquiry saved without sending email")
+        return
+
     resend.api_key = settings.resend_api_key
 
     resend.Emails.send({
@@ -163,7 +167,7 @@ def save_and_notify(body: EnquiryRequest, settings: Settings) -> None:
 
 
 @router.post("/enquiry", response_model=EnquiryResponse)
-@limiter.limit("5/minute")
+@limiter.limit("2/minute;5/day")
 async def submit_enquiry(body: EnquiryRequest, request: Request) -> EnquiryResponse:
     settings = get_settings()
 

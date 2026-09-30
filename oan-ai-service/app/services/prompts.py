@@ -97,9 +97,8 @@ Remember: you are a trusted consultant, not a database. Sound like one."""
 
 def build_system_prompt(context_chunks: list[dict]) -> str:
     if not context_chunks:
-        context = "No specific documentation found for this query — use your general knowledge \
-about OAN Group's product categories to give a helpful overview, and invite the buyer to ask \
-more specifically."
+        context = "No documentation was found for this query. You must reply that you don't have \
+that information and refer the buyer to info@oangroup.in. Do not answer from general knowledge."
     else:
         context = "\n\n---\n\n".join(
             f"[{chunk.get('metadata', {}).get('document_type', 'document').upper()} | "
