@@ -71,7 +71,7 @@ def create_app() -> FastAPI:
 app = create_app()
 
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 async def health() -> JSONResponse:
     checks = {"embedding_model": False, "supabase": False}
 

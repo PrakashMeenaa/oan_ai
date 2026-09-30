@@ -42,6 +42,7 @@ async def stream_llm_text(client: AsyncOpenAI, model: str, max_tokens: int, conv
     stream = await client.chat.completions.create(
         model=model,
         max_tokens=max_tokens,
+        temperature=0.2,
         messages=conversation,
         stream=True,
     )

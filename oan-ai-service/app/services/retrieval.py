@@ -1,7 +1,17 @@
+import logging
 import re
 from concurrent.futures import ThreadPoolExecutor
+from app.core.config import get_settings
 from app.core.supabase import get_supabase
 from app.services.embeddings import create_embedding
+
+logger = logging.getLogger("oan_ai_service.retrieval")
+
+FAMILY_TERMS = [
+    "defoamer", "anticaking", "antidusting", "granulation", "plasticizer",
+    "stearate", "flotation", "flocculant", "collector", "colouring",
+    "scale inhibitor", "filtration aid",
+]
 
 PRODUCT_KEYWORDS = [
     "product", "defoamer", "anticaking", "antidusting", "granulation",
@@ -39,6 +49,24 @@ def get_application_search_terms(query: str) -> list[str]:
         if keyword in query_lower:
             terms.append(product_prefix)
     return terms
+
+
+def get_family_terms(query: str) -> list[str]:
+    return [
+        term for term in FAMILY_TERMS
+        if re.search(rf"\b{re.escape(term)}(?:e?s)?\b", query, re.IGNORECASE)
+    ]
+
+
+def dedupe_chunks(chunks: list[dict]) -> list[dict]:
+    seen_ids: set[str] = set()
+    unique = []
+    for chunk in chunks:
+        chunk_id = str(chunk.get("id", ""))
+        if chunk_id not in seen_ids:
+            seen_ids.add(chunk_id)
+            unique.append(chunk)
+    return unique
 
 
 def is_product_question(query: str) -> bool:
@@ -93,24 +121,41 @@ def retrieve_relevant_chunks(query: str, match_count: int = 8) -> list[dict]:
         text_results = [chunk for batch in batches for chunk in batch]
 
         if text_results:
-            seen_ids: set[str] = set()
-            unique = []
-            for chunk in text_results:
-                chunk_id = str(chunk.get("id", ""))
-                if chunk_id not in seen_ids:
-                    seen_ids.add(chunk_id)
-                    unique.append(chunk)
-            return unique[:match_count]
+            unique = dedupe_chunks(text_results)[:match_count]
+            logger.info(f"retrieval keyword_count={len(unique)}, vector_count=0")
+            return unique
+
+    min_similarity = get_settings().retrieval_min_similarity
+    family_terms = get_family_terms(query)
+
+    if family_terms:
+        def run_vector() -> list[dict]:
+            return vector_search_chunks(create_embedding(query), min_similarity, match_count)
+
+        with ThreadPoolExecutor(max_workers=len(family_terms) + 1) as executor:
+            vector_future = executor.submit(run_vector)
+            keyword_futures = [
+                executor.submit(text_search_chunks, term, 6) for term in family_terms
+            ]
+            keyword_results = [c for f in keyword_futures for c in f.result()]
+            vector_results = vector_future.result()
+
+        logger.info(
+            f"retrieval keyword_count={len(keyword_results)}, vector_count={len(vector_results)}"
+        )
+        return dedupe_chunks(keyword_results + vector_results)[:match_count]
 
     query_embedding = create_embedding(query)
 
     if is_product_question(query):
         product_chunks = vector_search_chunks(
-            query_embedding, threshold=0.2, match_count=15, product_only=True
+            query_embedding, threshold=min_similarity, match_count=15, product_only=True
         )
         if len(product_chunks) >= 2:
             return product_chunks[:match_count]
 
-    return vector_search_chunks(
-        query_embedding, threshold=0.2, match_count=match_count
+    vector_results = vector_search_chunks(
+        query_embedding, threshold=min_similarity, match_count=match_count
     )
+    logger.info(f"retrieval keyword_count=0, vector_count={len(vector_results)}")
+    return vector_results

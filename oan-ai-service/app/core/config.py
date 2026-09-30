@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     oan_model: str = "openai/gpt-oss-120b"
     oan_max_tokens: int = 500
     daily_chat_cap: int = 150
+    retrieval_min_similarity: float = 0.0
     llm_base_url: str = "https://api.groq.com/openai/v1"
     fallback_llm_base_url: str = ""
     fallback_llm_api_key: str = ""
