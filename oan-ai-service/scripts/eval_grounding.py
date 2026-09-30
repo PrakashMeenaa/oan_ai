@@ -7,6 +7,7 @@ import argparse
 import json
 import re
 import sys
+import textwrap
 import time
 
 import httpx
@@ -20,7 +21,7 @@ CASES = [
      "must_match": [r"0\.9", r"6\.0", r"(?i)(less than|<)\s*10"],
      "must_not_match": [r"0\s*°?\s*C?\s*(to|-|–)\s*10"]},
     {"name": "OAN D 1009 specs", "message": "Tell me about OAN D 1009",
-     "must_match": [r"(?i)brownish", r"0\.90\s*-\s*0\.95"],
+     "must_match": [r"(?i)brownish", r"0\.90\s*(?:[-‐-―]|to)\s*0\.95"],
      "must_not_match": [r"(?i)heat"]},
     {"name": "defoamer category", "message": "What defoamers do you have?",
      "must_match": [r"OAN D 25"],
@@ -106,6 +107,8 @@ def main() -> int:
             results.append({"name": case["name"], "message": case["message"], "passed": passed,
                             "failures": failures, "reply": reply})
             print(f"{'PASS' if passed else 'FAIL'}  {case['name']}" + ("" if passed else f"  ({'; '.join(failures)})"))
+            if not passed:
+                print(f"      reply:\n{textwrap.indent(reply, '        ')}\n")
 
     with open("eval_results.json", "w", encoding="utf-8") as f:
         json.dump({"stopped_early": stopped_early, "results": results}, f, ensure_ascii=False, indent=2)
