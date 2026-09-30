@@ -8,3 +8,4 @@ documents/
 *.pdf
 documents/*.txt
 *.zip
+eval_results.json

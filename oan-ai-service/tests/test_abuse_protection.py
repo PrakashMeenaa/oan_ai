@@ -73,3 +73,7 @@ def test_empty_context_prompt_refuses_general_knowledge():
     assert "No documentation was found" in prompt
     assert "info@oangroup.in" in prompt
     assert "use your general knowledge" not in prompt
+
+
+def test_prompt_requires_exact_spec_quoting():
+    assert "copy it exactly" in build_system_prompt([])
